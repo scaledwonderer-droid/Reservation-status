@@ -156,7 +156,7 @@ function openDb(){return new Promise((resolve,reject)=>{if(!('indexedDB'in windo
 const dbPromise=openDb();
 function validState(value){
   if(!value||!Array.isArray(value.casts))return null;
-  const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,180,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,100,0),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
+  const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,350,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,100,0),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
   const l=value.logo||{};
   return {casts,logo:{imageData:typeof l.imageData==='string'?l.imageData:'',size:clampNum(l.size,8,55,25),x:clampNum(l.x,0,100,50),y:clampNum(l.y,0,100,9)},fontFamily:value.fontFamily==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido'};
 }
@@ -237,7 +237,7 @@ function renderEditor(){
       <div class="cast-main"><div class="thumb">${thumb}</div><div><label class="file-button">透過PNGを登録<input type="file" accept="image/png" data-action="cast-image" data-i="${i}"></label><div class="image-file-name">${c.imageData?'画像登録済み':'背景透過PNG'}</div></div></div>
       <div class="field" style="margin-top:9px"><label for="name${i}">名前</label><input id="name${i}" type="text" maxlength="30" data-action="name" data-i="${i}" value="${esc(c.name)}" placeholder="キャスト名"></div>
       <div class="crop-controls">
-        <label class="range-field"><span class="range-top"><span>拡大縮小</span><output>${c.scale}%</output></span><input type="range" min="50" max="180" value="${c.scale}" data-action="scale" data-i="${i}"></label>
+         <label class="range-field"><span class="range-top"><span>拡大縮小</span><output>${c.scale}%</output></span><input type="range" min="50" max="350" value="${c.scale}" data-action="scale" data-i="${i}"></label>
         <label class="range-field"><span class="range-top"><span>左右位置</span><output>${c.x}</output></span><input type="range" min="-100" max="100" value="${c.x}" data-action="x" data-i="${i}"></label>
         <label class="range-field"><span class="range-top"><span>上下位置</span><output>${c.y}</output></span><input type="range" min="-100" max="100" value="${c.y}" data-action="y" data-i="${i}"></label>
       </div>
