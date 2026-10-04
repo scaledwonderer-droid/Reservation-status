@@ -7,6 +7,8 @@
 <title>予約状況画像ジェネレーター</title>
 <style>
 :root{--ink:#263d5e;--muted:#71839a;--line:#d8e5f2;--blue:#5795df;--pale:#f3f9ff;--white:#fff;--shadow:0 12px 34px rgba(54,91,137,.10)}
+@font-face{font-family:"Zen Kurenaido";src:url("./fonts/ZenKurenaido-Regular.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"Hachi Maru Pop";src:url("./fonts/HachiMaruPop-Regular.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:linear-gradient(145deg,#eef7ff 0%,#f9fcff 45%,#edf4ff 100%);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic UI","Meiryo",sans-serif}
@@ -21,6 +23,11 @@ button,input{font:inherit}button{cursor:pointer}
 .editor{padding:17px;max-height:calc(100vh - 105px);overflow:auto;scrollbar-color:#c6d9ec transparent;scrollbar-width:thin}
 .section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}
 .section-head h2{font-size:16px;margin:0;color:#315579}
+.font-setting{display:grid;grid-template-columns:1fr;gap:6px;margin:0 0 13px;padding:11px 12px;border:1px solid #dce8f3;border-radius:12px;background:linear-gradient(135deg,#fbfdff,#f3f9ff)}
+.font-setting label{font-size:11px;color:#71849b;font-weight:650}
+.font-setting select{height:36px;padding:0 10px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;color:#315579;font:600 13px system-ui,-apple-system,"Segoe UI","Yu Gothic UI","Meiryo",sans-serif;outline:none}
+.font-setting select:focus{border-color:#82afe0;box-shadow:0 0 0 3px rgba(101,161,218,.13)}
+.font-setting small{font-size:10px;color:#8394a8}
 .counter{font-size:12px;color:#7188a2}
 .button{border:1px solid #c9dcee;background:linear-gradient(#fff,#f4f9ff);color:#355a7f;border-radius:10px;padding:8px 11px;font-size:13px;font-weight:650;box-shadow:0 2px 5px rgba(56,92,135,.05);transition:.15s ease}
 .button:hover{border-color:#92b9e4;background:#f4f9ff;transform:translateY(-1px)}
@@ -97,6 +104,7 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:16/9}
   <main class="workspace">
     <section class="panel editor" aria-label="画像編集">
       <div class="section-head"><h2>キャスト設定</h2><span class="counter" id="castCounter">0 / 10</span></div>
+      <div class="font-setting"><label for="fontSelect">完成画像のフォント</label><select id="fontSelect"><option value="Zen Kurenaido">Zen Kurenaido</option><option value="Hachi Maru Pop">Hachi Maru Pop</option></select><small>キャスト名と A / B / C に反映します</small></div>
       <div id="castList"></div>
       <div class="add-row"><button class="button primary" id="addCast">＋ キャストを追加</button></div>
       <div class="divider"></div>
@@ -137,8 +145,8 @@ const castList=$('#castList'), toast=$('#toast');
 const bg=new Image();
 bg.onload=()=>renderCanvas(); bg.src=BACKGROUND_URL;
 const imageCache=new Map();
-let state={casts:[],logo:{imageData:'',size:25,x:50,y:9}};
-let saveTimer,toastTimer;
+let state={casts:[],logo:{imageData:'',size:25,x:50,y:9},fontFamily:'Zen Kurenaido'};
+let saveTimer,toastTimer,fontLoadToken=0;
 
 function uid(){return (globalThis.crypto&&crypto.randomUUID)?crypto.randomUUID():`cast-${Date.now()}-${Math.random().toString(36).slice(2)}`}
 function newCast(){return {id:uid(),name:'',visible:true,imageData:'',scale:100,x:0,y:0,slots:[0,0,0]}}
@@ -150,13 +158,13 @@ function validState(value){
   if(!value||!Array.isArray(value.casts))return null;
   const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,180,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,100,0),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
   const l=value.logo||{};
-  return {casts,logo:{imageData:typeof l.imageData==='string'?l.imageData:'',size:clampNum(l.size,8,55,25),x:clampNum(l.x,0,100,50),y:clampNum(l.y,0,100,9)}};
+  return {casts,logo:{imageData:typeof l.imageData==='string'?l.imageData:'',size:clampNum(l.size,8,55,25),x:clampNum(l.x,0,100,50),y:clampNum(l.y,0,100,9)},fontFamily:value.fontFamily==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido'};
 }
 function clampNum(v,min,max,fallback){v=Number(v);return Number.isFinite(v)?Math.min(max,Math.max(min,v)):fallback}
 async function loadState(){
   try{const db=await dbPromise;const saved=await new Promise((resolve,reject)=>{const tx=db.transaction(STORE_NAME,'readonly');const req=tx.objectStore(STORE_NAME).get('main');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});const clean=validState(saved);if(clean)return clean}catch(e){}
   try{const raw=localStorage.getItem(DB_NAME);if(raw){const clean=validState(JSON.parse(raw));if(clean)return clean}}catch(e){}
-  return {casts:[],logo:{imageData:'',size:25,x:50,y:9}};
+  return {casts:[],logo:{imageData:'',size:25,x:50,y:9},fontFamily:'Zen Kurenaido'};
 }
 async function persist(){
   try{const db=await dbPromise;await new Promise((resolve,reject)=>{const tx=db.transaction(STORE_NAME,'readwrite');tx.objectStore(STORE_NAME).put(JSON.parse(JSON.stringify(state)),'main');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});$('#saveNote').textContent='保存済み';}
@@ -164,11 +172,18 @@ async function persist(){
 }
 function queueSave(){clearTimeout(saveTimer);$('#saveNote').textContent='保存中…';saveTimer=setTimeout(persist,350)}
 function imageFor(data){if(!data)return null;let img=imageCache.get(data);if(img)return img.complete&&img.naturalWidth?img:null;img=new Image();imageCache.set(data,img);img.onload=()=>renderCanvas();img.onerror=()=>{imageCache.delete(data);notify('画像を読み込めませんでした。PNG画像をご確認ください。')};img.src=data;return img.complete&&img.naturalWidth?img:null}
+async function loadCanvasFont(family){
+  const selected=family==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido',token=++fontLoadToken;
+  try{if(document.fonts?.load)await document.fonts.load(`400 32px "${selected}"`,'予約状況 キャスト名 ABC 123')}catch(e){}
+  if(token===fontLoadToken&&state.fontFamily===selected)renderCanvas();
+}
 function readDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file)})}
 function roundedRect(c,x,y,w,h,r){r=Math.min(r,w/2,h/2);c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
 function drawMark(kind,cx,cy,size){ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=size*.14;if(kind===1){ctx.strokeStyle='#d9364f';ctx.beginPath();ctx.moveTo(cx-size*.37,cy);ctx.lineTo(cx-size*.10,cy+size*.25);ctx.lineTo(cx+size*.43,cy-size*.32);ctx.stroke()}else if(kind===2){ctx.strokeStyle='#275bc7';ctx.beginPath();ctx.moveTo(cx-size*.31,cy-size*.31);ctx.lineTo(cx+size*.31,cy+size*.31);ctx.moveTo(cx+size*.31,cy-size*.31);ctx.lineTo(cx-size*.31,cy+size*.31);ctx.stroke()}ctx.restore()}
 function cardLayout(count){
-  if(count<=5){const gap=count===5?20:28,w=Math.min(count===5?344:370,Math.floor((WIDTH-100-gap*(count-1))/count)),h=560,total=count*w+(count-1)*gap;return {multi:false,w,h,gap,x:(WIDTH-total)/2,y:260}}
+  if(count<=4){const gap=28,w=Math.min(370,Math.floor((WIDTH-100-gap*(count-1))/count)),h=560,total=count*w+(count-1)*gap;return {multi:false,w,h,gap,x:(WIDTH-total)/2,y:260}}
+  if(count===5){const w=320,h=410,gapX=44,gapY=44,totalH=2*h+gapY;return {multi:true,pattern:'w',w,h,gapX,gapY,y:(HEIGHT-totalH)/2}}
+  if(count===6){const w=360,h=410,gapX=64,gapY=38,totalH=2*h+gapY;return {multi:true,w,h,gapX,gapY,first:3,y:(HEIGHT-totalH)/2}}
   const first=Math.ceil(count/2),gapX=22,gapY=28,w=Math.min(342,Math.floor((WIDTH-128-gapX*(first-1))/first)),h=410,totalH=2*h+gapY;
   return {multi:true,w,h,gapX,gapY,first,y:(HEIGHT-totalH)/2};
 }
@@ -188,27 +203,29 @@ function drawFrame(cast,x,y,w,h,multi){
   // Name plate and the three booking cells are drawn by the generator.
   const nameY=y+h-nameH-slotH-5;
   roundedRect(ctx,innerX,nameY,innerW,nameH+2,9);ctx.fillStyle='rgba(255,255,255,.91)';ctx.fill();ctx.strokeStyle='rgba(170,195,220,.78)';ctx.lineWidth=1.2;ctx.stroke();
-  ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#304e70';ctx.font=`700 ${multi?27:32}px system-ui, -apple-system, "Yu Gothic UI", "Meiryo", sans-serif`;let label=cast.name||'';while(ctx.measureText(label).width>innerW-28&&label.length>1){label=label.slice(0,-1)}if(label!==cast.name&&label.length>1)label+='…';ctx.fillText(label,innerX+innerW/2,nameY+nameH/2,innerW-22);ctx.restore();
+  ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#304e70';ctx.font=`700 ${multi?27:32}px "${state.fontFamily}", system-ui, -apple-system, "Yu Gothic UI", "Meiryo", sans-serif`;let label=cast.name||'';while(ctx.measureText(label).width>innerW-28&&label.length>1){label=label.slice(0,-1)}if(label!==cast.name&&label.length>1)label+='…';ctx.fillText(label,innerX+innerW/2,nameY+nameH/2,innerW-22);ctx.restore();
   const slotY=nameY+nameH+5,cellW=innerW/3;
   roundedRect(ctx,innerX,slotY,innerW,slotH-4,8);ctx.fillStyle='rgba(255,255,255,.94)';ctx.fill();ctx.strokeStyle='rgba(170,195,220,.82)';ctx.lineWidth=1.2;ctx.stroke();
   for(let i=1;i<3;i++){ctx.beginPath();ctx.moveTo(innerX+cellW*i,slotY+7);ctx.lineTo(innerX+cellW*i,slotY+slotH-11);ctx.strokeStyle='rgba(183,201,220,.70)';ctx.lineWidth=1;ctx.stroke()}
   const letters=['A','B','C'];
-  for(let i=0;i<3;i++){const cx=innerX+cellW*(i+.5),top=slotY+(multi?19:23);ctx.fillStyle='#536d89';ctx.font=`700 ${multi?19:21}px system-ui, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letters[i],cx,top);const markSize=multi?34:40;drawMark(cast.slots[i],cx,slotY+(multi?52:59),markSize)}
+  for(let i=0;i<3;i++){const cx=innerX+cellW*(i+.5),top=slotY+(multi?19:23);ctx.fillStyle='#536d89';ctx.font=`700 ${multi?19:21}px "${state.fontFamily}", system-ui, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letters[i],cx,top);const markSize=multi?34:40;drawMark(cast.slots[i],cx,slotY+(multi?52:59),markSize)}
   // Small silver corner accents.
   ctx.strokeStyle='rgba(132,166,198,.85)';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(x+18,y+31);ctx.lineTo(x+18,y+18);ctx.lineTo(x+31,y+18);ctx.moveTo(x+w-31,y+18);ctx.lineTo(x+w-18,y+18);ctx.lineTo(x+w-18,y+31);ctx.stroke();
 }
-function drawLogo(){if(!state.logo.imageData)return;const img=imageFor(state.logo.imageData);if(!img)return;const maxW=WIDTH*state.logo.size/100,scale=Math.min(maxW/img.naturalWidth,150/img.naturalHeight),w=img.naturalWidth*scale,h=img.naturalHeight*scale,x=WIDTH*state.logo.x/100,y=HEIGHT*state.logo.y/100;ctx.drawImage(img,x-w/2,y-h/2,w,h)}
+function drawLogo(){if(!state.logo.imageData)return;const img=imageFor(state.logo.imageData);if(!img)return;const size=state.logo.size/100,maxW=WIDTH*size,maxH=HEIGHT*size,scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight),w=img.naturalWidth*scale,h=img.naturalHeight*scale,cx=clampNum(WIDTH*state.logo.x/100,w/2,WIDTH-w/2),cy=clampNum(HEIGHT*state.logo.y/100,h/2,HEIGHT-h/2);ctx.drawImage(img,cx-w/2,cy-h/2,w,h)}
 function renderCanvas(){
   ctx.clearRect(0,0,WIDTH,HEIGHT);
   if(bg.complete&&bg.naturalWidth)ctx.drawImage(bg,0,0,WIDTH,HEIGHT);else{const g=ctx.createLinearGradient(0,0,WIDTH,HEIGHT);g.addColorStop(0,'#dceeff');g.addColorStop(1,'#fafdff');ctx.fillStyle=g;ctx.fillRect(0,0,WIDTH,HEIGHT)}
   drawLogo();const casts=state.casts.filter(c=>c.visible);$('#emptyNote').hidden=casts.length>0;
   if(!casts.length)return;
   const l=cardLayout(casts.length);
-  if(!l.multi){for(let i=0;i<casts.length;i++)drawFrame(casts[i],l.x+i*(l.w+l.gap),l.y,l.w,l.h,false)}
+  if(l.pattern==='w'){const start=(WIDTH-(5*l.w+4*l.gapX))/2,topY=l.y,bottomY=l.y+l.h+l.gapY;[0,2,4].forEach(i=>drawFrame(casts[i],start+i*(l.w+l.gapX),topY,l.w,l.h,true));[1,3].forEach(i=>drawFrame(casts[i],start+i*(l.w+l.gapX),bottomY,l.w,l.h,true))}
+  else if(!l.multi){for(let i=0;i<casts.length;i++)drawFrame(casts[i],l.x+i*(l.w+l.gap),l.y,l.w,l.h,false)}
   else{const top=casts.slice(0,l.first),bottom=casts.slice(l.first);const row=(arr,y)=>{const width=arr.length*l.w+(arr.length-1)*l.gapX;const start=(WIDTH-width)/2;arr.forEach((cast,i)=>drawFrame(cast,start+i*(l.w+l.gapX),y,l.w,l.h,true))};row(top,l.y);row(bottom,l.y+l.h+l.gapY)}
 }
 function renderEditor(){
   $('#castCounter').textContent=`${state.casts.length} / 10`;
+  $('#fontSelect').value=state.fontFamily;
   $('#addCast').disabled=state.casts.length>=10;$('#addCast').style.opacity=state.casts.length>=10?'.55':'1';
   castList.innerHTML=state.casts.map((c,i)=>{
     const markClass=['','',''];
@@ -236,6 +253,7 @@ function renderEditor(){
 function refresh(){renderCanvas();queueSave()}
 
 $('#addCast').addEventListener('click',()=>{if(state.casts.length>=10){notify('キャストは最大10名です。');return}state.casts.push(newCast());renderEditor();refresh()});
+$('#fontSelect').addEventListener('change',e=>{state.fontFamily=e.target.value==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido';renderCanvas();queueSave();loadCanvasFont(state.fontFamily)});
 castList.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const i=Number(b.dataset.i),action=b.dataset.action;if(!state.casts[i])return;
   if(action==='cycle'){const j=Number(b.dataset.slot);state.casts[i].slots[j]=(state.casts[i].slots[j]+1)%3;renderEditor();refresh()}
   if(action==='up'&&i>0){[state.casts[i-1],state.casts[i]]=[state.casts[i],state.casts[i-1]];renderEditor();refresh()}
@@ -253,10 +271,10 @@ $('#removeLogo').addEventListener('click',()=>{state.logo.imageData='';$('#logoF
 for(const id of ['logoSize','logoX','logoY'])$('#'+id).addEventListener('input',e=>{const key={logoSize:'size',logoX:'x',logoY:'y'}[id];state.logo[key]=Number(e.target.value);$('#'+{size:'logoSizeOut',x:'logoXOut',y:'logoYOut'}[key]).textContent=`${state.logo[key]}%`;renderCanvas();queueSave()});
 $('#savePng').addEventListener('click',()=>downloadImage('image/png','reservation-status.png'));
 $('#saveJpg').addEventListener('click',()=>downloadImage('image/jpeg','reservation-status.jpg',.94));
-function downloadImage(type,name,quality){if(!bg.complete||!bg.naturalWidth){notify('背景の読み込みが終わってから保存してください。');return}renderCanvas();canvas.toBlob(blob=>{if(!blob){notify('画像を書き出せませんでした。');return}const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);notify(`${name} を保存しました。1920 × 1080 pxです。`)},type,quality)}
+async function downloadImage(type,name,quality){if(!bg.complete||!bg.naturalWidth){notify('背景の読み込みが終わってから保存してください。');return}await loadCanvasFont(state.fontFamily);renderCanvas();canvas.toBlob(blob=>{if(!blob){notify('画像を書き出せませんでした。');return}const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);notify(`${name} を保存しました。1920 × 1080 pxです。`)},type,quality)}
 $('#exportJson').addEventListener('click',()=>{const blob=new Blob([JSON.stringify({version:1,...state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='reservation-settings.json';a.click();URL.revokeObjectURL(url)});
-$('#importJson').addEventListener('change',async e=>{const file=e.target.files&&e.target.files[0];if(!file)return;try{const parsed=JSON.parse(await file.text()),clean=validState(parsed.state||parsed);if(!clean)throw new Error('bad file');state=clean;imageCache.clear();renderEditor();renderCanvas();queueSave();notify('設定を読み込みました。')}catch(err){notify('JSONを読み込めませんでした。設定ファイルをご確認ください。')}e.target.value=''});
-(async()=>{state=await loadState();renderEditor();renderCanvas()})();
+$('#importJson').addEventListener('change',async e=>{const file=e.target.files&&e.target.files[0];if(!file)return;try{const parsed=JSON.parse(await file.text()),clean=validState(parsed.state||parsed);if(!clean)throw new Error('bad file');state=clean;imageCache.clear();renderEditor();renderCanvas();queueSave();loadCanvasFont(state.fontFamily);notify('設定を読み込みました。')}catch(err){notify('JSONを読み込めませんでした。設定ファイルをご確認ください。')}e.target.value=''});
+(async()=>{state=await loadState();renderEditor();renderCanvas();loadCanvasFont(state.fontFamily)})();
 </script>
 </body>
 </html>
