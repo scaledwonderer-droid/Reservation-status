@@ -115,7 +115,7 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:16/9}
           <div><label class="file-button">ロゴ画像を登録<input type="file" id="logoFile" accept="image/*"></label><div class="image-file-name" id="logoFileName">PNG等の画像を選択</div></div>
         </div>
         <div class="logo-sliders">
-          <div class="range-field"><div class="range-top"><span>サイズ</span><output id="logoSizeOut">25%</output></div><input type="range" id="logoSize" min="8" max="55" value="25"></div>
+          <div class="range-field"><div class="range-top"><span>サイズ</span><output id="logoSizeOut">25%</output></div><input type="range" id="logoSize" min="8" max="350" value="25"></div>
           <div class="range-field"><div class="range-top"><span>左右位置</span><output id="logoXOut">50%</output></div><input type="range" id="logoX" min="0" max="100" value="50"></div>
           <div class="range-field"><div class="range-top"><span>上下位置</span><output id="logoYOut">9%</output></div><input type="range" id="logoY" min="0" max="100" value="9"></div>
         </div>
@@ -158,7 +158,7 @@ function validState(value){
   if(!value||!Array.isArray(value.casts))return null;
   const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,350,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,100,0),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
   const l=value.logo||{};
-  return {casts,logo:{imageData:typeof l.imageData==='string'?l.imageData:'',size:clampNum(l.size,8,55,25),x:clampNum(l.x,0,100,50),y:clampNum(l.y,0,100,9)},fontFamily:value.fontFamily==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido'};
+   return {casts,logo:{imageData:typeof l.imageData==='string'?l.imageData:'',size:clampNum(l.size,8,350,25),x:clampNum(l.x,0,100,50),y:clampNum(l.y,0,100,9)},fontFamily:value.fontFamily==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido'};
 }
 function clampNum(v,min,max,fallback){v=Number(v);return Number.isFinite(v)?Math.min(max,Math.max(min,v)):fallback}
 async function loadState(){
@@ -212,7 +212,7 @@ function drawFrame(cast,x,y,w,h,multi){
   // Small silver corner accents.
   ctx.strokeStyle='rgba(132,166,198,.85)';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(x+18,y+31);ctx.lineTo(x+18,y+18);ctx.lineTo(x+31,y+18);ctx.moveTo(x+w-31,y+18);ctx.lineTo(x+w-18,y+18);ctx.lineTo(x+w-18,y+31);ctx.stroke();
 }
-function drawLogo(){if(!state.logo.imageData)return;const img=imageFor(state.logo.imageData);if(!img)return;const size=state.logo.size/100,maxW=WIDTH*size,maxH=HEIGHT*size,scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight),w=img.naturalWidth*scale,h=img.naturalHeight*scale,cx=clampNum(WIDTH*state.logo.x/100,w/2,WIDTH-w/2),cy=clampNum(HEIGHT*state.logo.y/100,h/2,HEIGHT-h/2);ctx.drawImage(img,cx-w/2,cy-h/2,w,h)}
+function drawLogo(){if(!state.logo.imageData)return;const img=imageFor(state.logo.imageData);if(!img)return;const size=state.logo.size/100,maxW=WIDTH*size,maxH=HEIGHT*size,scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight),w=img.naturalWidth*scale,h=img.naturalHeight*scale,targetX=WIDTH*state.logo.x/100,targetY=HEIGHT*state.logo.y/100,cx=w<=WIDTH?clampNum(targetX,w/2,WIDTH-w/2):targetX,cy=h<=HEIGHT?clampNum(targetY,h/2,HEIGHT-h/2):targetY;ctx.drawImage(img,cx-w/2,cy-h/2,w,h)}
 function renderCanvas(){
   ctx.clearRect(0,0,WIDTH,HEIGHT);
   if(bg.complete&&bg.naturalWidth)ctx.drawImage(bg,0,0,WIDTH,HEIGHT);else{const g=ctx.createLinearGradient(0,0,WIDTH,HEIGHT);g.addColorStop(0,'#dceeff');g.addColorStop(1,'#fafdff');ctx.fillStyle=g;ctx.fillRect(0,0,WIDTH,HEIGHT)}
