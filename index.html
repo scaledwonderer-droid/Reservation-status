@@ -83,7 +83,7 @@ input[type=range]{width:100%;accent-color:#6da8df;height:16px;margin:0}
 .stage-head strong{font-size:14px;color:#365a7d}
 .stage-head span{font-size:11px;color:#8597ab}
 .canvas-wrap{position:relative;width:100%;border-radius:12px;overflow:hidden;background:#eaf5ff;box-shadow:0 7px 26px rgba(55,96,143,.14);border:1px solid #d2e2f1}
-canvas{display:block;width:100%;height:auto;aspect-ratio:16/9}
+ canvas{display:block;width:100%;height:auto;aspect-ratio:16/9;touch-action:none;cursor:default}
 .empty-note{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;color:#54799f;font-size:clamp(14px,2vw,22px);text-shadow:0 1px 8px white;text-align:center;padding:20px}
 .empty-note span{display:inline-block;padding:12px 18px;border:1px solid rgba(204,225,243,.7);border-radius:999px;background:rgba(255,255,255,.58);backdrop-filter:blur(8px)}
 .export-row{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}
@@ -156,7 +156,7 @@ function openDb(){return new Promise((resolve,reject)=>{if(!('indexedDB'in windo
 const dbPromise=openDb();
 function validState(value){
   if(!value||!Array.isArray(value.casts))return null;
-  const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,350,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,100,0),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
+  const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,350,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,350,0),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
   const l=value.logo||{};
    return {casts,logo:{imageData:typeof l.imageData==='string'?l.imageData:'',size:clampNum(l.size,8,350,25),x:clampNum(l.x,0,100,50),y:clampNum(l.y,0,100,9)},fontFamily:value.fontFamily==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido'};
 }
@@ -187,8 +187,22 @@ function cardLayout(count){
   const first=Math.ceil(count/2),gapX=22,gapY=28,w=Math.min(342,Math.floor((WIDTH-128-gapX*(first-1))/first)),h=410,totalH=2*h+gapY;
   return {multi:true,w,h,gapX,gapY,first,y:(HEIGHT-totalH)/2};
 }
+function framePlacements(casts){
+  if(!casts.length)return [];
+  const l=cardLayout(casts.length);
+  if(l.pattern==='w'){
+    const start=(WIDTH-(5*l.w+4*l.gapX))/2,topY=l.y,bottomY=l.y+l.h+l.gapY,placements=new Array(casts.length);
+    [0,2,4].forEach(i=>placements[i]={cast:casts[i],x:start+i*(l.w+l.gapX),y:topY,w:l.w,h:l.h,multi:true});
+    [1,3].forEach(i=>placements[i]={cast:casts[i],x:start+i*(l.w+l.gapX),y:bottomY,w:l.w,h:l.h,multi:true});
+    return placements;
+  }
+  if(!l.multi)return casts.map((cast,i)=>({cast,x:l.x+i*(l.w+l.gap),y:l.y,w:l.w,h:l.h,multi:false}));
+  const row=(items,startIndex,y)=>{const width=items.length*l.w+(items.length-1)*l.gapX,start=(WIDTH-width)/2;return items.map((cast,i)=>({cast,x:start+i*(l.w+l.gapX),y,w:l.w,h:l.h,multi:true}))};
+  return row(casts.slice(0,l.first),0,l.y).concat(row(casts.slice(l.first),l.first,l.y+l.h+l.gapY));
+}
+function frameMetrics(x,y,w,h,multi){const nameH=multi?50:66,slotH=multi?76:88,innerX=x+12,innerW=w-24,imageY=y+13,imageBottom=y+h-nameH-slotH-12,imageH=imageBottom-imageY;return {nameH,slotH,innerX,innerW,imageY,imageH}}
 function drawFrame(cast,x,y,w,h,multi){
-  const nameH=multi?50:66,slotH=multi?76:88,innerX=x+12,innerW=w-24,imageY=y+13,imageBottom=y+h-nameH-slotH-12,imageH=imageBottom-imageY;
+  const {nameH,slotH,innerX,innerW,imageY,imageH}=frameMetrics(x,y,w,h,multi);
   ctx.save();
   ctx.shadowColor='rgba(55,91,131,.18)';ctx.shadowBlur=17;ctx.shadowOffsetY=5;roundedRect(ctx,x,y,w,h,17);ctx.fillStyle='rgba(248,253,255,.70)';ctx.fill();ctx.restore();
   roundedRect(ctx,x,y,w,h,17);ctx.strokeStyle='rgba(255,255,255,.96)';ctx.lineWidth=5;ctx.stroke();
@@ -226,12 +240,20 @@ function renderCanvas(){
   if(bg.complete&&bg.naturalWidth)ctx.drawImage(bg,0,0,WIDTH,HEIGHT);else{const g=ctx.createLinearGradient(0,0,WIDTH,HEIGHT);g.addColorStop(0,'#dceeff');g.addColorStop(1,'#fafdff');ctx.fillStyle=g;ctx.fillRect(0,0,WIDTH,HEIGHT)}
   drawLogo();const casts=state.casts.filter(c=>c.visible);$('#emptyNote').hidden=casts.length>0;
   if(!casts.length){drawCopyright();return}
-  const l=cardLayout(casts.length);
-  if(l.pattern==='w'){const start=(WIDTH-(5*l.w+4*l.gapX))/2,topY=l.y,bottomY=l.y+l.h+l.gapY;[0,2,4].forEach(i=>drawFrame(casts[i],start+i*(l.w+l.gapX),topY,l.w,l.h,true));[1,3].forEach(i=>drawFrame(casts[i],start+i*(l.w+l.gapX),bottomY,l.w,l.h,true))}
-  else if(!l.multi){for(let i=0;i<casts.length;i++)drawFrame(casts[i],l.x+i*(l.w+l.gap),l.y,l.w,l.h,false)}
-  else{const top=casts.slice(0,l.first),bottom=casts.slice(l.first);const row=(arr,y)=>{const width=arr.length*l.w+(arr.length-1)*l.gapX;const start=(WIDTH-width)/2;arr.forEach((cast,i)=>drawFrame(cast,start+i*(l.w+l.gapX),y,l.w,l.h,true))};row(top,l.y);row(bottom,l.y+l.h+l.gapY)}
+  framePlacements(casts).forEach(p=>drawFrame(p.cast,p.x,p.y,p.w,p.h,p.multi));
   drawCopyright();
 }
+let activeCanvasDrag=null;
+function canvasPoint(event){const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;return {x:(event.clientX-rect.left)*WIDTH/rect.width,y:(event.clientY-rect.top)*HEIGHT/rect.height}}
+function imagePlacementAt(point){const casts=state.casts.filter(c=>c.visible),placements=framePlacements(casts);for(let i=placements.length-1;i>=0;i--){const placement=placements[i];if(!placement.cast.imageData)continue;const m=frameMetrics(placement.x,placement.y,placement.w,placement.h,placement.multi);if(point.x>=m.innerX&&point.x<=m.innerX+m.innerW&&point.y>=m.imageY&&point.y<=m.imageY+m.imageH+3)return {...placement,metrics:m}}return null}
+function syncPositionControls(cast){const index=state.casts.indexOf(cast);if(index<0)return;for(const axis of ['x','y']){const input=castList.querySelector(`input[data-action="${axis}"][data-i="${index}"]`);if(!input)continue;input.value=String(cast[axis]);const output=input.closest('.range-field')?.querySelector('output');if(output)output.textContent=String(cast[axis])}}
+function updateCanvasDrag(event){if(!activeCanvasDrag||event.pointerId!==activeCanvasDrag.pointerId)return;const point=canvasPoint(event);if(!point)return;const drag=activeCanvasDrag;drag.cast.x=clampNum(drag.startXValue+(point.x-drag.startX)*100/(drag.metrics.innerW*.36),-100,100,0);drag.cast.y=clampNum(drag.startYValue+(point.y-drag.startY)*100/(drag.metrics.imageH*.36),-100,350,0);syncPositionControls(drag.cast);renderCanvas();queueSave()}
+function finishCanvasDrag(event){if(!activeCanvasDrag||event.pointerId!==activeCanvasDrag.pointerId)return;updateCanvasDrag(event);const pointerId=activeCanvasDrag.pointerId;activeCanvasDrag=null;if(canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);const point=canvasPoint(event);canvas.style.cursor=point&&imagePlacementAt(point)?'grab':'default'}
+canvas.addEventListener('pointerdown',event=>{if(event.button!==0)return;const point=canvasPoint(event),placement=point&&imagePlacementAt(point);if(!placement)return;activeCanvasDrag={pointerId:event.pointerId,cast:placement.cast,startX:point.x,startY:point.y,startXValue:placement.cast.x,startYValue:placement.cast.y,metrics:placement.metrics};canvas.setPointerCapture(event.pointerId);canvas.style.cursor='grabbing';event.preventDefault()});
+canvas.addEventListener('pointermove',event=>{if(activeCanvasDrag){updateCanvasDrag(event);return}const point=canvasPoint(event);canvas.style.cursor=point&&imagePlacementAt(point)?'grab':'default'});
+canvas.addEventListener('pointerup',finishCanvasDrag);
+canvas.addEventListener('pointercancel',event=>{if(activeCanvasDrag&&event.pointerId===activeCanvasDrag.pointerId){activeCanvasDrag=null;canvas.style.cursor='default'}});
+canvas.addEventListener('lostpointercapture',event=>{if(activeCanvasDrag&&event.pointerId===activeCanvasDrag.pointerId){activeCanvasDrag=null;canvas.style.cursor='default'}});
 function renderEditor(){
   $('#castCounter').textContent=`${state.casts.length} / 10`;
   $('#fontSelect').value=state.fontFamily;
@@ -248,7 +270,7 @@ function renderEditor(){
       <div class="crop-controls">
          <label class="range-field"><span class="range-top"><span>拡大縮小</span><output>${c.scale}%</output></span><input type="range" min="50" max="350" value="${c.scale}" data-action="scale" data-i="${i}"></label>
         <label class="range-field"><span class="range-top"><span>左右位置</span><output>${c.x}</output></span><input type="range" min="-100" max="100" value="${c.x}" data-action="x" data-i="${i}"></label>
-        <label class="range-field"><span class="range-top"><span>上下位置</span><output>${c.y}</output></span><input type="range" min="-100" max="100" value="${c.y}" data-action="y" data-i="${i}"></label>
+         <label class="range-field"><span class="range-top"><span>上下位置</span><output>${c.y}</output></span><input type="range" min="-100" max="350" value="${c.y}" data-action="y" data-i="${i}"></label>
       </div>
       <div class="status-row">${statusHtml}</div>
     </section>`;
