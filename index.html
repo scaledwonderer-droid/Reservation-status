@@ -174,7 +174,7 @@ function queueSave(){clearTimeout(saveTimer);$('#saveNote').textContent='保存�
 function imageFor(data){if(!data)return null;let img=imageCache.get(data);if(img)return img.complete&&img.naturalWidth?img:null;img=new Image();imageCache.set(data,img);img.onload=()=>renderCanvas();img.onerror=()=>{imageCache.delete(data);notify('画像を読み込めませんでした。PNG画像をご確認ください。')};img.src=data;return img.complete&&img.naturalWidth?img:null}
 async function loadCanvasFont(family){
   const selected=family==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido',token=++fontLoadToken;
-  try{if(document.fonts?.load)await document.fonts.load(`400 32px "${selected}"`,'予約状況 キャスト名 ABC 123')}catch(e){}
+  try{if(document.fonts?.load)await document.fonts.load(`400 32px "${selected}"`,'予約状況 キャスト名 ABC 123 © SQUARE ENIX © scaledwonderer-droid')}catch(e){}
   if(token===fontLoadToken&&state.fontFamily===selected)renderCanvas();
 }
 function readDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file)})}
@@ -213,15 +213,24 @@ function drawFrame(cast,x,y,w,h,multi){
   ctx.strokeStyle='rgba(132,166,198,.85)';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(x+18,y+31);ctx.lineTo(x+18,y+18);ctx.lineTo(x+31,y+18);ctx.moveTo(x+w-31,y+18);ctx.lineTo(x+w-18,y+18);ctx.lineTo(x+w-18,y+31);ctx.stroke();
 }
 function drawLogo(){if(!state.logo.imageData)return;const img=imageFor(state.logo.imageData);if(!img)return;const size=state.logo.size/100,maxW=WIDTH*size,maxH=HEIGHT*size,scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight),w=img.naturalWidth*scale,h=img.naturalHeight*scale,targetX=WIDTH*state.logo.x/100,targetY=HEIGHT*state.logo.y/100,cx=w<=WIDTH?clampNum(targetX,w/2,WIDTH-w/2):targetX,cy=h<=HEIGHT?clampNum(targetY,h/2,HEIGHT-h/2):targetY;ctx.drawImage(img,cx-w/2,cy-h/2,w,h)}
+function drawCopyright(){
+  const labels=['© SQUARE ENIX','© scaledwonderer-droid'];
+  ctx.save();ctx.font=`400 17px "${state.fontFamily}", system-ui, sans-serif`;
+  const padX=14,boxH=34,columnGap=14,dividerGap=12,widthA=ctx.measureText(labels[0]).width,widthB=ctx.measureText(labels[1]).width,boxW=padX*2+widthA+columnGap+1+dividerGap+widthB,x=WIDTH-30-boxW,y=HEIGHT-24-boxH;
+  roundedRect(ctx,x,y,boxW,boxH,10);ctx.fillStyle='rgba(255,255,255,.72)';ctx.fill();ctx.strokeStyle='rgba(150,178,205,.62)';ctx.lineWidth=1;ctx.stroke();
+  ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#5a718b';const textY=y+boxH/2,textAX=x+padX,dividerX=textAX+widthA+columnGap, textBX=dividerX+1+dividerGap;
+  ctx.fillText(labels[0],textAX,textY);ctx.beginPath();ctx.moveTo(dividerX,y+9);ctx.lineTo(dividerX,y+boxH-9);ctx.strokeStyle='rgba(142,168,193,.65)';ctx.lineWidth=1;ctx.stroke();ctx.fillText(labels[1],textBX,textY);ctx.restore();
+}
 function renderCanvas(){
   ctx.clearRect(0,0,WIDTH,HEIGHT);
   if(bg.complete&&bg.naturalWidth)ctx.drawImage(bg,0,0,WIDTH,HEIGHT);else{const g=ctx.createLinearGradient(0,0,WIDTH,HEIGHT);g.addColorStop(0,'#dceeff');g.addColorStop(1,'#fafdff');ctx.fillStyle=g;ctx.fillRect(0,0,WIDTH,HEIGHT)}
   drawLogo();const casts=state.casts.filter(c=>c.visible);$('#emptyNote').hidden=casts.length>0;
-  if(!casts.length)return;
+  if(!casts.length){drawCopyright();return}
   const l=cardLayout(casts.length);
   if(l.pattern==='w'){const start=(WIDTH-(5*l.w+4*l.gapX))/2,topY=l.y,bottomY=l.y+l.h+l.gapY;[0,2,4].forEach(i=>drawFrame(casts[i],start+i*(l.w+l.gapX),topY,l.w,l.h,true));[1,3].forEach(i=>drawFrame(casts[i],start+i*(l.w+l.gapX),bottomY,l.w,l.h,true))}
   else if(!l.multi){for(let i=0;i<casts.length;i++)drawFrame(casts[i],l.x+i*(l.w+l.gap),l.y,l.w,l.h,false)}
   else{const top=casts.slice(0,l.first),bottom=casts.slice(l.first);const row=(arr,y)=>{const width=arr.length*l.w+(arr.length-1)*l.gapX;const start=(WIDTH-width)/2;arr.forEach((cast,i)=>drawFrame(cast,start+i*(l.w+l.gapX),y,l.w,l.h,true))};row(top,l.y);row(bottom,l.y+l.h+l.gapY)}
+  drawCopyright();
 }
 function renderEditor(){
   $('#castCounter').textContent=`${state.casts.length} / 10`;
