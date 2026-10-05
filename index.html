@@ -26,8 +26,16 @@ button,input{font:inherit}button{cursor:pointer}
 .font-setting{display:grid;grid-template-columns:1fr;gap:6px;margin:0 0 13px;padding:11px 12px;border:1px solid #dce8f3;border-radius:12px;background:linear-gradient(135deg,#fbfdff,#f3f9ff)}
 .font-setting label{font-size:11px;color:#71849b;font-weight:650}
 .font-setting select{height:36px;padding:0 10px;border:1px solid #d8e5f1;border-radius:8px;background:#fff;color:#315579;font:600 13px system-ui,-apple-system,"Segoe UI","Yu Gothic UI","Meiryo",sans-serif;outline:none}
-.font-setting select:focus{border-color:#82afe0;box-shadow:0 0 0 3px rgba(101,161,218,.13)}
-.font-setting small{font-size:10px;color:#8394a8}
+ .font-setting select:focus{border-color:#82afe0;box-shadow:0 0 0 3px rgba(101,161,218,.13)}
+ .font-setting small{font-size:10px;color:#8394a8}
+ .layout-tools{margin:0 0 13px;padding:11px 12px;border:1px solid #dce8f3;border-radius:12px;background:linear-gradient(135deg,#fbfdff,#f3f9ff)}
+ .layout-toggle{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#456987}
+ .layout-toggle input{accent-color:#5f9cdc}
+ .layout-controls{display:grid;gap:9px;margin-top:10px}
+ .layout-selected{font-size:11px;color:#71849b}
+ .layout-selected strong{display:block;margin-top:3px;color:#355a7d;font-size:13px}
+ .layout-hint{margin:0;color:#8092a7;font-size:10px;line-height:1.45}
+ .layout-position-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .counter{font-size:12px;color:#7188a2}
 .button{border:1px solid #c9dcee;background:linear-gradient(#fff,#f4f9ff);color:#355a7f;border-radius:10px;padding:8px 11px;font-size:13px;font-weight:650;box-shadow:0 2px 5px rgba(56,92,135,.05);transition:.15s ease}
 .button:hover{border-color:#92b9e4;background:#f4f9ff;transform:translateY(-1px)}
@@ -105,6 +113,18 @@ input[type=range]{width:100%;accent-color:#6da8df;height:16px;margin:0}
     <section class="panel editor" aria-label="画像編集">
       <div class="section-head"><h2>キャスト設定</h2><span class="counter" id="castCounter">0 / 10</span></div>
       <div class="font-setting"><label for="fontSelect">完成画像のフォント</label><select id="fontSelect"><option value="Zen Kurenaido">Zen Kurenaido</option><option value="Hachi Maru Pop">Hachi Maru Pop</option></select><small>キャスト名と A / B / C に反映します</small></div>
+      <section class="layout-tools">
+        <label class="layout-toggle"><input type="checkbox" id="layoutModeToggle">レイアウト調整モード</label>
+        <div class="layout-controls" id="layoutControls" hidden>
+          <p class="layout-hint">プレビュー上のキャスト窓をドラッグして移動できます。選択後、スライダーで位置を微調整できます。</p>
+          <div class="layout-selected">選択中のキャスト窓<strong id="selectedCardName">プレビューで窓を選択</strong></div>
+          <div class="layout-position-controls">
+            <label class="range-field"><span class="range-top"><span>窓の左右位置</span><output id="layoutCardXOut">—</output></span><input type="range" id="layoutCardX" min="0" max="100" step="0.1" value="50" disabled></label>
+            <label class="range-field"><span class="range-top"><span>窓の上下位置</span><output id="layoutCardYOut">—</output></span><input type="range" id="layoutCardY" min="0" max="100" step="0.1" value="50" disabled></label>
+          </div>
+          <button class="button" id="resetAutoLayout" type="button">自動配置に戻す</button>
+        </div>
+      </section>
       <div id="castList"></div>
       <div class="add-row"><button class="button primary" id="addCast">＋ キャストを追加</button></div>
       <div class="divider"></div>
@@ -146,17 +166,17 @@ const bg=new Image();
 bg.onload=()=>renderCanvas(); bg.src=BACKGROUND_URL;
 const imageCache=new Map();
 let state={casts:[],logo:{imageData:'',size:25,x:50,y:9},fontFamily:'Zen Kurenaido'};
-let saveTimer,toastTimer,fontLoadToken=0;
+let saveTimer,toastTimer,fontLoadToken=0,layoutMode=false,selectedCastId=null;
 
 function uid(){return (globalThis.crypto&&crypto.randomUUID)?crypto.randomUUID():`cast-${Date.now()}-${Math.random().toString(36).slice(2)}`}
-function newCast(){return {id:uid(),name:'',visible:true,imageData:'',scale:100,x:0,y:0,slots:[0,0,0]}}
+function newCast(){return {id:uid(),name:'',visible:true,imageData:'',scale:100,x:0,y:0,cardX:null,cardY:null,slots:[0,0,0]}}
 function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function notify(message){toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2600)}
 function openDb(){return new Promise((resolve,reject)=>{if(!('indexedDB'in window)){reject(new Error('IndexedDB unavailable'));return}const req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(STORE_NAME))req.result.createObjectStore(STORE_NAME)};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
 const dbPromise=openDb();
 function validState(value){
   if(!value||!Array.isArray(value.casts))return null;
-  const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,350,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,350,0),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
+  const casts=value.casts.slice(0,10).map((c,i)=>({id:String(c.id||uid()),name:String(c.name||''),visible:c.visible!==false,imageData:typeof c.imageData==='string'?c.imageData:'',scale:clampNum(c.scale,50,350,100),x:clampNum(c.x,-100,100,0),y:clampNum(c.y,-100,350,0),cardX:c.cardX==null?null:clampNum(c.cardX,0,100,50),cardY:c.cardY==null?null:clampNum(c.cardY,0,100,50),slots:Array.isArray(c.slots)?[0,1,2].map(k=>[0,1,2].includes(Number(c.slots[k]))?Number(c.slots[k]):0):[0,0,0]}));
   const l=value.logo||{};
    return {casts,logo:{imageData:typeof l.imageData==='string'?l.imageData:'',size:clampNum(l.size,8,350,25),x:clampNum(l.x,0,100,50),y:clampNum(l.y,0,100,9)},fontFamily:value.fontFamily==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido'};
 }
@@ -187,6 +207,7 @@ function cardLayout(count){
   const first=Math.ceil(count/2),gapX=22,gapY=28,w=Math.min(342,Math.floor((WIDTH-128-gapX*(first-1))/first)),h=410,totalH=2*h+gapY;
   return {multi:true,w,h,gapX,gapY,first,y:(HEIGHT-totalH)/2};
 }
+function applyCardPositions(placements){return placements.map(p=>({...p,x:p.cast.cardX==null?p.x:(WIDTH-p.w)*p.cast.cardX/100,y:p.cast.cardY==null?p.y:(HEIGHT-p.h)*p.cast.cardY/100}))}
 function framePlacements(casts){
   if(!casts.length)return [];
   const l=cardLayout(casts.length);
@@ -194,14 +215,14 @@ function framePlacements(casts){
     const start=(WIDTH-(5*l.w+4*l.gapX))/2,topY=l.y,bottomY=l.y+l.h+l.gapY,placements=new Array(casts.length);
     [0,2,4].forEach(i=>placements[i]={cast:casts[i],x:start+i*(l.w+l.gapX),y:topY,w:l.w,h:l.h,multi:true});
     [1,3].forEach(i=>placements[i]={cast:casts[i],x:start+i*(l.w+l.gapX),y:bottomY,w:l.w,h:l.h,multi:true});
-    return placements;
+    return applyCardPositions(placements);
   }
-  if(!l.multi)return casts.map((cast,i)=>({cast,x:l.x+i*(l.w+l.gap),y:l.y,w:l.w,h:l.h,multi:false}));
-  const row=(items,startIndex,y)=>{const width=items.length*l.w+(items.length-1)*l.gapX,start=(WIDTH-width)/2;return items.map((cast,i)=>({cast,x:start+i*(l.w+l.gapX),y,w:l.w,h:l.h,multi:true}))};
-  return row(casts.slice(0,l.first),0,l.y).concat(row(casts.slice(l.first),l.first,l.y+l.h+l.gapY));
+  if(!l.multi)return applyCardPositions(casts.map((cast,i)=>({cast,x:l.x+i*(l.w+l.gap),y:l.y,w:l.w,h:l.h,multi:false})));
+  const row=(items,y)=>{const width=items.length*l.w+(items.length-1)*l.gapX,start=(WIDTH-width)/2;return items.map((cast,i)=>({cast,x:start+i*(l.w+l.gapX),y,w:l.w,h:l.h,multi:true}))};
+  return applyCardPositions(row(casts.slice(0,l.first),l.y).concat(row(casts.slice(l.first),l.y+l.h+l.gapY)));
 }
 function frameMetrics(x,y,w,h,multi){const nameH=multi?50:66,slotH=multi?76:88,innerX=x+12,innerW=w-24,imageY=y+13,imageBottom=y+h-nameH-slotH-12,imageH=imageBottom-imageY;return {nameH,slotH,innerX,innerW,imageY,imageH}}
-function drawFrame(cast,x,y,w,h,multi){
+function drawFrame(cast,x,y,w,h,multi,selected=false){
   const {nameH,slotH,innerX,innerW,imageY,imageH}=frameMetrics(x,y,w,h,multi);
   ctx.save();
   ctx.shadowColor='rgba(55,91,131,.18)';ctx.shadowBlur=17;ctx.shadowOffsetY=5;roundedRect(ctx,x,y,w,h,17);ctx.fillStyle='rgba(248,253,255,.70)';ctx.fill();ctx.restore();
@@ -225,6 +246,7 @@ function drawFrame(cast,x,y,w,h,multi){
   for(let i=0;i<3;i++){const cx=innerX+cellW*(i+.5),top=slotY+(multi?19:23);ctx.fillStyle='#536d89';ctx.font=`700 ${multi?19:21}px "${state.fontFamily}", system-ui, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letters[i],cx,top);const markSize=multi?34:40;drawMark(cast.slots[i],cx,slotY+(multi?52:59),markSize)}
   // Small silver corner accents.
   ctx.strokeStyle='rgba(132,166,198,.85)';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(x+18,y+31);ctx.lineTo(x+18,y+18);ctx.lineTo(x+31,y+18);ctx.moveTo(x+w-31,y+18);ctx.lineTo(x+w-18,y+18);ctx.lineTo(x+w-18,y+31);ctx.stroke();
+  if(selected){ctx.save();roundedRect(ctx,x+2,y+2,w-4,h-4,15);ctx.strokeStyle='#4b92d3';ctx.lineWidth=4;ctx.stroke();ctx.restore()}
 }
 function drawLogo(){if(!state.logo.imageData)return;const img=imageFor(state.logo.imageData);if(!img)return;const size=state.logo.size/100,maxW=WIDTH*size,maxH=HEIGHT*size,scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight),w=img.naturalWidth*scale,h=img.naturalHeight*scale,targetX=WIDTH*state.logo.x/100,targetY=HEIGHT*state.logo.y/100,cx=w<=WIDTH?clampNum(targetX,w/2,WIDTH-w/2):targetX,cy=h<=HEIGHT?clampNum(targetY,h/2,HEIGHT-h/2):targetY;ctx.drawImage(img,cx-w/2,cy-h/2,w,h)}
 function drawCopyright(){
@@ -235,22 +257,43 @@ function drawCopyright(){
   ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#5a718b';const textY=y+boxH/2,textAX=x+padX,dividerX=textAX+widthA+columnGap, textBX=dividerX+1+dividerGap;
   ctx.fillText(labels[0],textAX,textY);ctx.beginPath();ctx.moveTo(dividerX,y+9);ctx.lineTo(dividerX,y+boxH-9);ctx.strokeStyle='rgba(142,168,193,.65)';ctx.lineWidth=1;ctx.stroke();ctx.fillText(labels[1],textBX,textY);ctx.restore();
 }
-function renderCanvas(){
+function renderCanvas(includeEditorSelection=true){
   ctx.clearRect(0,0,WIDTH,HEIGHT);
   if(bg.complete&&bg.naturalWidth)ctx.drawImage(bg,0,0,WIDTH,HEIGHT);else{const g=ctx.createLinearGradient(0,0,WIDTH,HEIGHT);g.addColorStop(0,'#dceeff');g.addColorStop(1,'#fafdff');ctx.fillStyle=g;ctx.fillRect(0,0,WIDTH,HEIGHT)}
   drawLogo();const casts=state.casts.filter(c=>c.visible);$('#emptyNote').hidden=casts.length>0;
   if(!casts.length){drawCopyright();return}
-  framePlacements(casts).forEach(p=>drawFrame(p.cast,p.x,p.y,p.w,p.h,p.multi));
+  framePlacements(casts).forEach(p=>drawFrame(p.cast,p.x,p.y,p.w,p.h,p.multi,includeEditorSelection&&layoutMode&&p.cast.id===selectedCastId));
   drawCopyright();
 }
 let activeCanvasDrag=null;
 function canvasPoint(event){const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;return {x:(event.clientX-rect.left)*WIDTH/rect.width,y:(event.clientY-rect.top)*HEIGHT/rect.height}}
-function imagePlacementAt(point){const casts=state.casts.filter(c=>c.visible),placements=framePlacements(casts);for(let i=placements.length-1;i>=0;i--){const placement=placements[i];if(!placement.cast.imageData)continue;const m=frameMetrics(placement.x,placement.y,placement.w,placement.h,placement.multi);if(point.x>=m.innerX&&point.x<=m.innerX+m.innerW&&point.y>=m.imageY&&point.y<=m.imageY+m.imageH+3)return {...placement,metrics:m}}return null}
+function cardPlacementAt(point){const placements=framePlacements(state.casts.filter(c=>c.visible));for(let i=placements.length-1;i>=0;i--){const p=placements[i];if(point.x>=p.x&&point.x<=p.x+p.w&&point.y>=p.y&&point.y<=p.y+p.h)return p}return null}
+function imagePlacementAt(point){const placements=framePlacements(state.casts.filter(c=>c.visible));for(let i=placements.length-1;i>=0;i--){const placement=placements[i];if(!placement.cast.imageData)continue;const m=frameMetrics(placement.x,placement.y,placement.w,placement.h,placement.multi);if(point.x>=m.innerX&&point.x<=m.innerX+m.innerW&&point.y>=m.imageY&&point.y<=m.imageY+m.imageH+3)return {...placement,metrics:m}}return null}
 function syncPositionControls(cast){const index=state.casts.indexOf(cast);if(index<0)return;for(const axis of ['x','y']){const input=castList.querySelector(`input[data-action="${axis}"][data-i="${index}"]`);if(!input)continue;input.value=String(cast[axis]);const output=input.closest('.range-field')?.querySelector('output');if(output)output.textContent=String(cast[axis])}}
-function updateCanvasDrag(event){if(!activeCanvasDrag||event.pointerId!==activeCanvasDrag.pointerId)return;const point=canvasPoint(event);if(!point)return;const drag=activeCanvasDrag;drag.cast.x=clampNum(drag.startXValue+(point.x-drag.startX)*100/(drag.metrics.innerW*.36),-100,100,0);drag.cast.y=clampNum(drag.startYValue+(point.y-drag.startY)*100/(drag.metrics.imageH*.36),-100,350,0);syncPositionControls(drag.cast);renderCanvas();queueSave()}
-function finishCanvasDrag(event){if(!activeCanvasDrag||event.pointerId!==activeCanvasDrag.pointerId)return;updateCanvasDrag(event);const pointerId=activeCanvasDrag.pointerId;activeCanvasDrag=null;if(canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);const point=canvasPoint(event);canvas.style.cursor=point&&imagePlacementAt(point)?'grab':'default'}
-canvas.addEventListener('pointerdown',event=>{if(event.button!==0)return;const point=canvasPoint(event),placement=point&&imagePlacementAt(point);if(!placement)return;activeCanvasDrag={pointerId:event.pointerId,cast:placement.cast,startX:point.x,startY:point.y,startXValue:placement.cast.x,startYValue:placement.cast.y,metrics:placement.metrics};canvas.setPointerCapture(event.pointerId);canvas.style.cursor='grabbing';event.preventDefault()});
-canvas.addEventListener('pointermove',event=>{if(activeCanvasDrag){updateCanvasDrag(event);return}const point=canvasPoint(event);canvas.style.cursor=point&&imagePlacementAt(point)?'grab':'default'});
+function positionPercent(pixel,travel){return travel>0?Math.round(clampNum(pixel/travel*100,0,100,50)*10)/10:50}
+function selectedCard(){return state.casts.find(c=>c.id===selectedCastId)||null}
+function syncLayoutControls(){
+  const controls=$('#layoutControls'),selected=selectedCard(),visible=selected&&selected.visible,placement=visible?framePlacements(state.casts.filter(c=>c.visible)).find(p=>p.cast===selected):null;
+  controls.hidden=!layoutMode;$('#selectedCardName').textContent=selected?(selected.name||`キャスト ${state.casts.indexOf(selected)+1}`):'プレビューで窓を選択';
+  for(const [axis,inputId,outId,travel] of [['cardX','layoutCardX','layoutCardXOut',placement?WIDTH-placement.w:0],['cardY','layoutCardY','layoutCardYOut',placement?HEIGHT-placement.h:0]]){
+    const input=$('#'+inputId),output=$('#'+outId),value=selected?(selected[axis]==null&&placement?positionPercent(placement[axis==='cardX'?'x':'y'],travel):selected[axis]??50):50;
+    input.disabled=!layoutMode||!placement;input.value=String(value);output.textContent=selected&&placement?`${Number(value).toFixed(1)}%`:'—';
+  }
+  $('#resetAutoLayout').disabled=!state.casts.length;
+}
+function updateImageDrag(event){const drag=activeCanvasDrag;if(!drag||drag.kind!=='image'||event.pointerId!==drag.pointerId)return;const point=canvasPoint(event);if(!point)return;drag.cast.x=clampNum(drag.startXValue+(point.x-drag.startX)*100/(drag.metrics.innerW*.36),-100,100,0);drag.cast.y=clampNum(drag.startYValue+(point.y-drag.startY)*100/(drag.metrics.imageH*.36),-100,350,0);syncPositionControls(drag.cast);renderCanvas();queueSave()}
+function updateCardDrag(event){const drag=activeCanvasDrag;if(!drag||drag.kind!=='card'||event.pointerId!==drag.pointerId)return;const point=canvasPoint(event);if(!point)return;if(point.x!==drag.startX||point.y!==drag.startY)drag.moved=true;if(!drag.moved)return;const maxX=WIDTH-drag.placement.w,maxY=HEIGHT-drag.placement.h,x=clampNum(drag.startCardX+point.x-drag.startX,0,maxX,0),y=clampNum(drag.startCardY+point.y-drag.startY,0,maxY,0);drag.cast.cardX=positionPercent(x,maxX);drag.cast.cardY=positionPercent(y,maxY);syncLayoutControls();renderCanvas();queueSave()}
+function updateCanvasDrag(event){if(!activeCanvasDrag||event.pointerId!==activeCanvasDrag.pointerId)return;if(activeCanvasDrag.kind==='card')updateCardDrag(event);else updateImageDrag(event)}
+function updateCanvasCursor(event){const point=canvasPoint(event),target=point&&(layoutMode?cardPlacementAt(point):imagePlacementAt(point));canvas.style.cursor=target?'grab':'default'}
+function finishCanvasDrag(event){if(!activeCanvasDrag||event.pointerId!==activeCanvasDrag.pointerId)return;updateCanvasDrag(event);const pointerId=activeCanvasDrag.pointerId;activeCanvasDrag=null;if(canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);updateCanvasCursor(event)}
+function changeCardPosition(axis,value){const selected=selectedCard();if(!layoutMode||!selected||!selected.visible)return;const placement=framePlacements(state.casts.filter(c=>c.visible)).find(p=>p.cast===selected);if(!placement)return;if(selected.cardX==null)selected.cardX=positionPercent(placement.x,WIDTH-placement.w);if(selected.cardY==null)selected.cardY=positionPercent(placement.y,HEIGHT-placement.h);selected[axis]=clampNum(value,0,100,50);syncLayoutControls();renderCanvas();queueSave()}
+canvas.addEventListener('pointerdown',event=>{
+  if(event.button!==0)return;const point=canvasPoint(event);if(!point)return;
+  if(layoutMode){const placement=cardPlacementAt(point);if(!placement){selectedCastId=null;syncLayoutControls();renderCanvas();updateCanvasCursor(event);return}selectedCastId=placement.cast.id;syncLayoutControls();renderCanvas();activeCanvasDrag={kind:'card',pointerId:event.pointerId,cast:placement.cast,placement,startX:point.x,startY:point.y,startCardX:placement.x,startCardY:placement.y,moved:false}}
+  else{const placement=imagePlacementAt(point);if(!placement)return;activeCanvasDrag={kind:'image',pointerId:event.pointerId,cast:placement.cast,startX:point.x,startY:point.y,startXValue:placement.cast.x,startYValue:placement.cast.y,metrics:placement.metrics}}
+  canvas.setPointerCapture(event.pointerId);canvas.style.cursor='grabbing';event.preventDefault();
+});
+canvas.addEventListener('pointermove',event=>{if(activeCanvasDrag){updateCanvasDrag(event);return}updateCanvasCursor(event)});
 canvas.addEventListener('pointerup',finishCanvasDrag);
 canvas.addEventListener('pointercancel',event=>{if(activeCanvasDrag&&event.pointerId===activeCanvasDrag.pointerId){activeCanvasDrag=null;canvas.style.cursor='default'}});
 canvas.addEventListener('lostpointercapture',event=>{if(activeCanvasDrag&&event.pointerId===activeCanvasDrag.pointerId){activeCanvasDrag=null;canvas.style.cursor='default'}});
@@ -280,20 +323,25 @@ function renderEditor(){
   $('#removeLogo').hidden=!state.logo.imageData;
   $('#logoPreview').innerHTML=state.logo.imageData?`<img src="${state.logo.imageData}" alt="ロゴプレビュー">`:'画像なし';
   $('#logoFileName').textContent=state.logo.imageData?'画像登録済み':'PNG等の画像を選択';
+  syncLayoutControls();
 }
 function refresh(){renderCanvas();queueSave()}
 
+$('#layoutModeToggle').addEventListener('change',e=>{layoutMode=e.target.checked;syncLayoutControls();renderCanvas();canvas.style.cursor='default'});
+$('#layoutCardX').addEventListener('input',e=>changeCardPosition('cardX',Number(e.target.value)));
+$('#layoutCardY').addEventListener('input',e=>changeCardPosition('cardY',Number(e.target.value)));
+$('#resetAutoLayout').addEventListener('click',()=>{state.casts.forEach(c=>{c.cardX=null;c.cardY=null});syncLayoutControls();renderCanvas();queueSave()});
 $('#addCast').addEventListener('click',()=>{if(state.casts.length>=10){notify('キャストは最大10名です。');return}state.casts.push(newCast());renderEditor();refresh()});
 $('#fontSelect').addEventListener('change',e=>{state.fontFamily=e.target.value==='Hachi Maru Pop'?'Hachi Maru Pop':'Zen Kurenaido';renderCanvas();queueSave();loadCanvasFont(state.fontFamily)});
 castList.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const i=Number(b.dataset.i),action=b.dataset.action;if(!state.casts[i])return;
   if(action==='cycle'){const j=Number(b.dataset.slot);state.casts[i].slots[j]=(state.casts[i].slots[j]+1)%3;renderEditor();refresh()}
   if(action==='up'&&i>0){[state.casts[i-1],state.casts[i]]=[state.casts[i],state.casts[i-1]];renderEditor();refresh()}
   if(action==='down'&&i<state.casts.length-1){[state.casts[i+1],state.casts[i]]=[state.casts[i],state.casts[i+1]];renderEditor();refresh()}
-  if(action==='delete'){state.casts.splice(i,1);renderEditor();refresh()}
+  if(action==='delete'){if(state.casts[i].id===selectedCastId)selectedCastId=null;state.casts.splice(i,1);renderEditor();refresh()}
 });
 castList.addEventListener('input',e=>{const el=e.target,action=el.dataset.action,i=Number(el.dataset.i),c=state.casts[i];if(!c)return;
-  if(action==='name'){c.name=el.value;const heading=$(`#castTitle${i}`);if(heading)heading.textContent=c.name||`キャスト ${i+1}`;renderCanvas();queueSave();return}
-  if(action==='visible'){c.visible=el.checked;renderCanvas();queueSave();return}
+  if(action==='name'){c.name=el.value;const heading=$(`#castTitle${i}`);if(heading)heading.textContent=c.name||`キャスト ${i+1}`;syncLayoutControls();renderCanvas();queueSave();return}
+  if(action==='visible'){c.visible=el.checked;if(!c.visible&&c.id===selectedCastId)selectedCastId=null;syncLayoutControls();renderCanvas();queueSave();return}
   if(['scale','x','y'].includes(action)){c[action]=Number(el.value);const out=el.closest('.range-field').querySelector('output');if(out)out.textContent=action==='scale'?`${c[action]}%`:String(c[action]);renderCanvas();queueSave()}
 });
 castList.addEventListener('change',async e=>{const el=e.target;if(el.dataset.action!=='cast-image')return;const file=el.files&&el.files[0],c=state.casts[Number(el.dataset.i)];if(!file||!c)return;if(file.type!=='image/png'){notify('背景透過PNGを選んでください。');el.value='';return}try{c.imageData=await readDataUrl(file);renderEditor();refresh()}catch(err){notify('画像の読み込みに失敗しました。')}});
@@ -302,7 +350,7 @@ $('#removeLogo').addEventListener('click',()=>{state.logo.imageData='';$('#logoF
 for(const id of ['logoSize','logoX','logoY'])$('#'+id).addEventListener('input',e=>{const key={logoSize:'size',logoX:'x',logoY:'y'}[id];state.logo[key]=Number(e.target.value);$('#'+{size:'logoSizeOut',x:'logoXOut',y:'logoYOut'}[key]).textContent=`${state.logo[key]}%`;renderCanvas();queueSave()});
 $('#savePng').addEventListener('click',()=>downloadImage('image/png','reservation-status.png'));
 $('#saveJpg').addEventListener('click',()=>downloadImage('image/jpeg','reservation-status.jpg',.94));
-async function downloadImage(type,name,quality){if(!bg.complete||!bg.naturalWidth){notify('背景の読み込みが終わってから保存してください。');return}await loadCanvasFont(state.fontFamily);renderCanvas();canvas.toBlob(blob=>{if(!blob){notify('画像を書き出せませんでした。');return}const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);notify(`${name} を保存しました。1920 × 1080 pxです。`)},type,quality)}
+async function downloadImage(type,name,quality){if(!bg.complete||!bg.naturalWidth){notify('背景の読み込みが終わってから保存してください。');return}await loadCanvasFont(state.fontFamily);renderCanvas(false);canvas.toBlob(blob=>{renderCanvas();if(!blob){notify('画像を書き出せませんでした。');return}const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);notify(`${name} を保存しました。1920 × 1080 pxです。`)},type,quality)}
 $('#exportJson').addEventListener('click',()=>{const blob=new Blob([JSON.stringify({version:1,...state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='reservation-settings.json';a.click();URL.revokeObjectURL(url)});
 $('#importJson').addEventListener('change',async e=>{const file=e.target.files&&e.target.files[0];if(!file)return;try{const parsed=JSON.parse(await file.text()),clean=validState(parsed.state||parsed);if(!clean)throw new Error('bad file');state=clean;imageCache.clear();renderEditor();renderCanvas();queueSave();loadCanvasFont(state.fontFamily);notify('設定を読み込みました。')}catch(err){notify('JSONを読み込めませんでした。設定ファイルをご確認ください。')}e.target.value=''});
 (async()=>{state=await loadState();renderEditor();renderCanvas();loadCanvasFont(state.fontFamily)})();
